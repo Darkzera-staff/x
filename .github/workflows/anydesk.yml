@@ -1,61 +1,96 @@
-name: Windows Cloud PC - AnyDesk (Fixed)
+name: Windows Cloud PC - Full Setup (AnyDesk + Extras)
 
 on:
   workflow_dispatch:
 
 jobs:
-  start-cloud-pc:
-    name: Iniciar Windows Cloud PC
+  setup-cloud-pc:
+    name: Configurar Cloud PC Completo
     runs-on: windows-latest
     timeout-minutes: 10080
 
     steps:
-      - name: Instalar e Configurar AnyDesk
+      - name: Instalar Chocolatey e Pacotes Básicos
         shell: powershell
         run: |
-          Write-Host "Baixando e iniciando AnyDesk..." -ForegroundColor Green
-          
-          $anydeskPath = "$env:TEMP\AnyDesk.exe"
-          Invoke-WebRequest -Uri "https://download.anydesk.com/AnyDesk.exe" -OutFile $anydeskPath
+          Write-Host "Instalando Chocolatey..." -ForegroundColor Green
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+          iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
 
-          # Iniciar AnyDesk
-          Start-Process $anydeskPath -ArgumentList "--start" -NoNewWindow
-          Start-Sleep -Seconds 10
+          choco install anydesk -y --ignore-checksums --force --no-progress
+          Write-Host "AnyDesk instalado via Chocolatey" -ForegroundColor Green
 
-          # Tentar pegar o ID várias vezes
-          $ID = ""
-          for ($i = 1; $i -le 8; $i++) {
-              Start-Sleep -Seconds 5
-              $ID = & $anydeskPath --get-id
-              if ($ID -and $ID -ne "0" -and $ID -match "\d") {
-                  break
-              }
-              Write-Host "Tentativa $i de pegar ID..." -ForegroundColor Yellow
-          }
-
-          if ($ID -and $ID -ne "0") {
-              Write-Host "AnyDesk ID: $ID" -ForegroundColor Cyan
-              $ID | Out-File -FilePath "$env:GITHUB_WORKSPACE\ANYDESK_ID.txt"
-          } else {
-              Write-Host "Falha ao obter ID após várias tentativas." -ForegroundColor Red
-          }
-
-          # Definir senha
-          echo "joyzonetech" | & $anydeskPath --set-password _full_access
-          Write-Host "Senha configurada: joyzonetech" -ForegroundColor Green
-
-      - name: Monitoramento AnyDesk
+      - name: Download e Configuração de Arquivos
         shell: powershell
         run: |
-          Write-Host "Monitoramento iniciado (verifica a cada 3 minutos)..." -ForegroundColor Green
-          
-          $anydeskPath = "$env:TEMP\AnyDesk.exe"
+          Write-Host "Baixando arquivos necessários..." -ForegroundColor Cyan
+
+          # start.bat
+          Invoke-WebRequest 'https://www.dropbox.com/scl/fi/cypox1i3e2ewmpnr19fqn/start.bat?rlkey=s6skd47gmo21vkl0yv3tyneri&dl=1' -OutFile "start.bat"
+
+          # time.py, shutdown.bat
+          Invoke-WebRequest 'https://www.dropbox.com/scl/fi/ox42qglbf6fsnm9erf8cw/timelimit.py?rlkey=opyeqgum1k95kud81xlc7d66r&dl=0' -OutFile "time.py"
+          Invoke-WebRequest 'https://www.dropbox.com/scl/fi/lmlcrz3v1sayw8p51ki1j/shutdown.bat?rlkey=ysjxivh5vz4scnhkqgv3yc4mm&dl=0' -OutFile "shutdown.bat"
+
+          # VMQuickConfig
+          Invoke-WebRequest 'https://github.com/chieunhatnang/VM-QuickConfig/releases/download/1.6.1/VMQuickConfig.exe' -OutFile 'C:\Users\Public\Desktop\VMQuickConfig.exe'
+
+          Write-Host "Arquivos baixados." -ForegroundColor Green
+
+      - name: Instalar Programas Adicionais
+        shell: powershell
+        run: |
+          # Telegram
+          Invoke-WebRequest 'https://telegram.org/dl/desktop/win64' -OutFile 'C:\Users\Public\Desktop\Telegram.exe'
+          Start-Process 'C:\Users\Public\Desktop\Telegram.exe' -ArgumentList '/VERYSILENT /NORESTART' -Wait
+          Remove-Item 'C:\Users\Public\Desktop\Telegram.exe' -Force
+
+          # WinRAR
+          Invoke-WebRequest 'https://www.rarlab.com/rar/winrar-x64-621.exe' -OutFile 'C:\Users\Public\Desktop\Winrar.exe'
+          Start-Process 'C:\Users\Public\Desktop\Winrar.exe' -ArgumentList '/S' -Wait
+          Remove-Item 'C:\Users\Public\Desktop\Winrar.exe' -Force
+
+          Write-Host "Telegram e WinRAR instalados." -ForegroundColor Green
+
+      - name: Configurações do Sistema
+        shell: powershell
+        run: |
+          $password = "@#Joyzonetech123456"
+          Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText $password -Force)
+          Write-Host "Senha do usuário runneradmin configurada." -ForegroundColor Green
+
+          # Mostrar ícone do Computador na Área de Trabalho
+          reg add "HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel" /v "{20D04FE0-3AEA-1069-A2D8-08002B30309D}" /t REG_DWORD /d 0 /f
+
+          # Fuso horário
+          tzutil /s "Pacific Standard Time"
+
+      - name: Iniciar AnyDesk + VMQuickConfig
+        shell: powershell
+        run: |
+          # Executa o start.bat que você tem
+          if (Test-Path "start.bat") {
+              cmd /c start.bat
+          }
+
+          # Inicia VMQuickConfig
+          $vm = "C:\Users\Public\Desktop\VMQuickConfig.exe"
+          if (Test-Path $vm) {
+              Start-Process $vm -WindowStyle Maximized
+              Write-Host "VMQuickConfig iniciado." -ForegroundColor Green
+          }
+
+      - name: Monitoramento + Manter Vivo
+        shell: powershell
+        run: |
+          Write-Host "Iniciando monitoramento e mantendo runner ativo..." -ForegroundColor Cyan
           
           while ($true) {
-              $process = Get-Process -Name "AnyDesk" -ErrorAction SilentlyContinue
-              if (-not $process) {
-                  Write-Host "AnyDesk não está rodando. Reiniciando..." -ForegroundColor Red
-                  Start-Process $anydeskPath -ArgumentList "--start" -NoNewWindow
+              $anydesk = Get-Process -Name "AnyDesk" -ErrorAction SilentlyContinue
+              if (-not $anydesk) {
+                  Write-Host "AnyDesk caiu. Reiniciando..."
+                  Start-Process "C:\Program Files (x86)\AnyDesk\AnyDesk.exe" -ArgumentList "--start"
               }
-              Start-Sleep -Seconds 180
+              Start-Sleep -Seconds 300
           }
