@@ -1,96 +1,94 @@
-name: Windows Cloud PC - Full Setup (AnyDesk + Extras)
+name: Windows Cloud PC - Full Setup
 
 on:
   workflow_dispatch:
 
 jobs:
-  setup-cloud-pc:
-    name: Configurar Cloud PC Completo
+  setup:
+    name: Configurar Windows Cloud PC
     runs-on: windows-latest
-    timeout-minutes: 10080
+    timeout-minutes: 10080  # 7 dias
 
     steps:
-      - name: Instalar Chocolatey e Pacotes Básicos
+      - name: Instalar Chocolatey + AnyDesk
         shell: powershell
         run: |
-          Write-Host "Instalando Chocolatey..." -ForegroundColor Green
+          Write-Host "Instalando Chocolatey e AnyDesk..." -ForegroundColor Green
+          
           Set-ExecutionPolicy Bypass -Scope Process -Force
           [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
           iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-
+          
           choco install anydesk -y --ignore-checksums --force --no-progress
-          Write-Host "AnyDesk instalado via Chocolatey" -ForegroundColor Green
+          Write-Host "AnyDesk instalado." -ForegroundColor Green
 
-      - name: Download e Configuração de Arquivos
+      - name: Baixar Arquivos e Programas
         shell: powershell
         run: |
           Write-Host "Baixando arquivos necessários..." -ForegroundColor Cyan
 
-          # start.bat
+          # Seus arquivos do Dropbox
           Invoke-WebRequest 'https://www.dropbox.com/scl/fi/cypox1i3e2ewmpnr19fqn/start.bat?rlkey=s6skd47gmo21vkl0yv3tyneri&dl=1' -OutFile "start.bat"
-
-          # time.py, shutdown.bat
           Invoke-WebRequest 'https://www.dropbox.com/scl/fi/ox42qglbf6fsnm9erf8cw/timelimit.py?rlkey=opyeqgum1k95kud81xlc7d66r&dl=0' -OutFile "time.py"
           Invoke-WebRequest 'https://www.dropbox.com/scl/fi/lmlcrz3v1sayw8p51ki1j/shutdown.bat?rlkey=ysjxivh5vz4scnhkqgv3yc4mm&dl=0' -OutFile "shutdown.bat"
 
           # VMQuickConfig
           Invoke-WebRequest 'https://github.com/chieunhatnang/VM-QuickConfig/releases/download/1.6.1/VMQuickConfig.exe' -OutFile 'C:\Users\Public\Desktop\VMQuickConfig.exe'
 
-          Write-Host "Arquivos baixados." -ForegroundColor Green
+          # Telegram e WinRAR
+          Invoke-WebRequest 'https://telegram.org/dl/desktop/win64' -OutFile "$env:PUBLIC\Desktop\Telegram.exe"
+          Invoke-WebRequest 'https://www.rarlab.com/rar/winrar-x64-621.exe' -OutFile "$env:PUBLIC\Desktop\Winrar.exe"
 
-      - name: Instalar Programas Adicionais
+      - name: Instalar Programas
         shell: powershell
         run: |
           # Telegram
-          Invoke-WebRequest 'https://telegram.org/dl/desktop/win64' -OutFile 'C:\Users\Public\Desktop\Telegram.exe'
-          Start-Process 'C:\Users\Public\Desktop\Telegram.exe' -ArgumentList '/VERYSILENT /NORESTART' -Wait
-          Remove-Item 'C:\Users\Public\Desktop\Telegram.exe' -Force
+          Start-Process "$env:PUBLIC\Desktop\Telegram.exe" -ArgumentList '/VERYSILENT /NORESTART' -Wait
+          Remove-Item "$env:PUBLIC\Desktop\Telegram.exe" -Force
 
           # WinRAR
-          Invoke-WebRequest 'https://www.rarlab.com/rar/winrar-x64-621.exe' -OutFile 'C:\Users\Public\Desktop\Winrar.exe'
-          Start-Process 'C:\Users\Public\Desktop\Winrar.exe' -ArgumentList '/S' -Wait
-          Remove-Item 'C:\Users\Public\Desktop\Winrar.exe' -Force
+          Start-Process "$env:PUBLIC\Desktop\Winrar.exe" -ArgumentList '/S' -Wait
+          Remove-Item "$env:PUBLIC\Desktop\Winrar.exe" -Force
 
           Write-Host "Telegram e WinRAR instalados." -ForegroundColor Green
 
       - name: Configurações do Sistema
         shell: powershell
         run: |
+          # Senha do usuário
           $password = "@#Joyzonetech123456"
           Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText $password -Force)
-          Write-Host "Senha do usuário runneradmin configurada." -ForegroundColor Green
+          Write-Host "Senha configurada: $password" -ForegroundColor Green
 
-          # Mostrar ícone do Computador na Área de Trabalho
+          # Mostrar Computador na Área de Trabalho
           reg add "HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel" /v "{20D04FE0-3AEA-1069-A2D8-08002B30309D}" /t REG_DWORD /d 0 /f
 
-          # Fuso horário
+          # Fuso Horário
           tzutil /s "Pacific Standard Time"
 
-      - name: Iniciar AnyDesk + VMQuickConfig
+      - name: Executar start.bat + VMQuickConfig + Monitoramento
         shell: powershell
         run: |
-          # Executa o start.bat que você tem
+          # Executa seu start.bat
           if (Test-Path "start.bat") {
               cmd /c start.bat
+              Write-Host "start.bat executado." -ForegroundColor Green
           }
 
           # Inicia VMQuickConfig
-          $vm = "C:\Users\Public\Desktop\VMQuickConfig.exe"
-          if (Test-Path $vm) {
-              Start-Process $vm -WindowStyle Maximized
+          $vmPath = "C:\Users\Public\Desktop\VMQuickConfig.exe"
+          if (Test-Path $vmPath) {
+              Start-Process $vmPath -WindowStyle Maximized
               Write-Host "VMQuickConfig iniciado." -ForegroundColor Green
           }
 
-      - name: Monitoramento + Manter Vivo
-        shell: powershell
-        run: |
-          Write-Host "Iniciando monitoramento e mantendo runner ativo..." -ForegroundColor Cyan
-          
+          # Monitoramento AnyDesk
+          Write-Host "Iniciando monitoramento do AnyDesk..." -ForegroundColor Cyan
           while ($true) {
               $anydesk = Get-Process -Name "AnyDesk" -ErrorAction SilentlyContinue
               if (-not $anydesk) {
-                  Write-Host "AnyDesk caiu. Reiniciando..."
-                  Start-Process "C:\Program Files (x86)\AnyDesk\AnyDesk.exe" -ArgumentList "--start"
+                  Write-Host "AnyDesk caiu. Reiniciando..." -ForegroundColor Red
+                  Start-Process "C:\Program Files (x86)\AnyDesk\AnyDesk.exe" --ArgumentList "--start"
               }
               Start-Sleep -Seconds 300
           }
