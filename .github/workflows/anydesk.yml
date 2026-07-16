@@ -1,85 +1,61 @@
-name: Windows Cloud PC - AnyDesk (Self-Contained)
+name: Windows Cloud PC - AnyDesk (Fixed)
 
 on:
-  workflow_dispatch:  # Executa manualmente
+  workflow_dispatch:
 
 jobs:
   start-cloud-pc:
     name: Iniciar Windows Cloud PC
     runs-on: windows-latest
-    timeout-minutes: 10080  # 7 dias
+    timeout-minutes: 10080
 
     steps:
-      - name: Configurar AnyDesk (Sem download externo)
+      - name: Instalar e Configurar AnyDesk
         shell: powershell
         run: |
-          Write-Host "Iniciando configuração do AnyDesk..." -ForegroundColor Green
-
-          # Baixar AnyDesk direto da fonte oficial
-          Invoke-WebRequest -Uri "https://download.anydesk.com/AnyDesk.exe" -OutFile "$env:TEMP\AnyDesk.exe"
+          Write-Host "Baixando e iniciando AnyDesk..." -ForegroundColor Green
+          
+          $anydeskPath = "$env:TEMP\AnyDesk.exe"
+          Invoke-WebRequest -Uri "https://download.anydesk.com/AnyDesk.exe" -OutFile $anydeskPath
 
           # Iniciar AnyDesk
-          Start-Process "$env:TEMP\AnyDesk.exe" -ArgumentList "--start"
+          Start-Process $anydeskPath -ArgumentList "--start" -NoNewWindow
+          Start-Sleep -Seconds 10
 
-          Start-Sleep -Seconds 8
-
-          # Pegar ID
-          $ID = & "$env:TEMP\AnyDesk.exe" --get-id
-          Write-Host "AnyDesk ID: $ID" -ForegroundColor Cyan
-
-          # Definir senha
-          echo "joyzonetech" | & "$env:TEMP\AnyDesk.exe" --set-password _full_access
-          Write-Host "Senha configurada: joyzonetech" -ForegroundColor Green
-
-          # Salvar ID em arquivo (útil para ver no log)
-          $ID | Out-File -FilePath "$env:GITHUB_WORKSPACE\ANYDESK_ID.txt"
-
-      - name: Iniciar VMQuickConfig + Automação
-        shell: powershell
-        run: |
-          $vmPath = "C:\Users\Public\Desktop\VMQuickConfig"
-          
-          if (Test-Path $vmPath) {
-              Start-Process $vmPath -Wait -WindowStyle Maximized
-              Start-Sleep -Seconds 4
-
-              # Automação de cliques (mais confiável)
-              Add-Type -AssemblyName System.Windows.Forms
-              $wshell = New-Object -ComObject WScript.Shell
-
-              $positions = @(
-                  @{x=147; y=489; delay=2},
-                  @{x=156; y=552; delay=2},
-                  @{x=587; y=14;  delay=1},
-                  @{x=916; y=17;  delay=1},
-                  @{x=897; y=64;  delay=1}
-              )
-
-              foreach ($pos in $positions) {
-                  [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point($pos.x, $pos.y)
-                  Start-Sleep -Seconds $pos.delay
+          # Tentar pegar o ID várias vezes
+          $ID = ""
+          for ($i = 1; $i -le 8; $i++) {
+              Start-Sleep -Seconds 5
+              $ID = & $anydeskPath --get-id
+              if ($ID -and $ID -ne "0" -and $ID -match "\d") {
+                  break
               }
-              Write-Host "Automação de cliques concluída." -ForegroundColor Green
-          } else {
-              Write-Host "VMQuickConfig não encontrado." -ForegroundColor Yellow
+              Write-Host "Tentativa $i de pegar ID..." -ForegroundColor Yellow
           }
 
-      - name: Monitoramento AnyDesk (Manter vivo)
+          if ($ID -and $ID -ne "0") {
+              Write-Host "AnyDesk ID: $ID" -ForegroundColor Cyan
+              $ID | Out-File -FilePath "$env:GITHUB_WORKSPACE\ANYDESK_ID.txt"
+          } else {
+              Write-Host "Falha ao obter ID após várias tentativas." -ForegroundColor Red
+          }
+
+          # Definir senha
+          echo "joyzonetech" | & $anydeskPath --set-password _full_access
+          Write-Host "Senha configurada: joyzonetech" -ForegroundColor Green
+
+      - name: Monitoramento AnyDesk
         shell: powershell
         run: |
-          Write-Host "Iniciando monitoramento do AnyDesk..." -ForegroundColor Green
+          Write-Host "Monitoramento iniciado (verifica a cada 3 minutos)..." -ForegroundColor Green
+          
+          $anydeskPath = "$env:TEMP\AnyDesk.exe"
           
           while ($true) {
               $process = Get-Process -Name "AnyDesk" -ErrorAction SilentlyContinue
               if (-not $process) {
-                  Write-Host "AnyDesk caiu. Reiniciando..." -ForegroundColor Red
-                  Start-Process "$env:TEMP\AnyDesk.exe" -ArgumentList "--start"
+                  Write-Host "AnyDesk não está rodando. Reiniciando..." -ForegroundColor Red
+                  Start-Process $anydeskPath -ArgumentList "--start" -NoNewWindow
               }
-              Start-Sleep -Seconds 180  # Verifica a cada 3 minutos
+              Start-Sleep -Seconds 180
           }
-
-      - name: Manter Runner Vivo
-        shell: powershell
-        run: |
-          Write-Host "Runner mantido ativo por até 7 dias..." -ForegroundColor Cyan
-          Start-Sleep -Seconds 604800  # 7 dias
